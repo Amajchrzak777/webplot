@@ -60,7 +60,7 @@ const ImpedancePlot3D = ({ allWebhookData }) => {
       type: 'scatter3d',
       marker: {
         size: 3,
-        color: `hsl(${measurementIndex * 40}, 70%, 50%)`,
+        color: `hsl(${(measurementIndex * 360) / allWebhookData.length}, 70%, 50%)`,
       },
       name: `Spectrum ${measurementIndex + 1}`,
       showlegend: true

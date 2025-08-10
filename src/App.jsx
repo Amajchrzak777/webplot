@@ -56,6 +56,23 @@ function App() {
     return webhookFormatData;
   };
 
+  // Sort webhook data by iteration number extracted from ID
+  const sortWebhookDataByIteration = (data) => {
+    return [...data].sort((a, b) => {
+      // Extract iteration number from ID format: "{id}_iter_{003}"
+      const extractIteration = (id) => {
+        const match = id.match(/_iter_(\d+)/);
+        return match ? parseInt(match[1], 10) : 0;
+      };
+      
+      const iterA = extractIteration(a.ID || '');
+      const iterB = extractIteration(b.ID || '');
+      
+      console.log(`Sorting: ${a.ID} (iter ${iterA}) vs ${b.ID} (iter ${iterB})`);
+      return iterA - iterB;
+    });
+  };
+
   // Handle CSV file upload
   const handleCsvUpload = (event) => {
     const file = event.target.files[0];
@@ -82,8 +99,14 @@ function App() {
         ]);
         const latestData = await latestResponse.json();
         const allData = await allResponse.json();
+        
+        // Sort all webhook data by iteration number for proper plot ordering
+        const sortedAllData = sortWebhookDataByIteration(allData);
+        
         setWebhookData(latestData);
-        setAllWebhookData(allData);
+        setAllWebhookData(sortedAllData);
+        
+        console.log(`Fetched and sorted ${sortedAllData.length} webhook entries`);
       } catch (error) {
         console.error('Error fetching webhook data:', error);
       }
@@ -167,11 +190,25 @@ function App() {
           }}>
             <h2>Latest Webhook Data</h2>
             <p><strong>ID:</strong> {currentData.ID}</p>
+            <p><strong>Iteration:</strong> {(() => {
+              const match = currentData.ID?.match(/_iter_(\d+)/);
+              return match ? parseInt(match[1], 10) : 'N/A';
+            })()}</p>
             <p><strong>Time:</strong> {new Date(currentData.Time).toLocaleString()}</p>
             <p><strong>Chi-Square:</strong> {currentData.ChiSquare?.toFixed(12)}</p>
             <p><strong>Real Impedance:</strong> [{currentData.RealImpedance?.slice(0,5).map(val => val.toFixed(3)).join(', ')}...]</p>
             <p><strong>Imaginary Impedance:</strong> [{currentData.ImaginaryImpedance?.slice(0,5).map(val => val.toFixed(3)).join(', ')}...]</p>
             <p><strong>Total Spectra:</strong> {allWebhookData.length}</p>
+            <p><strong>Iteration Range:</strong> {(() => {
+              if (allWebhookData.length === 0) return 'N/A';
+              const iterations = allWebhookData.map(item => {
+                const match = item.ID?.match(/_iter_(\d+)/);
+                return match ? parseInt(match[1], 10) : 0;
+              });
+              const min = Math.min(...iterations);
+              const max = Math.max(...iterations);
+              return min === max ? `${min}` : `${min}-${max}`;
+            })()}</p>
           </div>
         ) : (
           <div style={{ 

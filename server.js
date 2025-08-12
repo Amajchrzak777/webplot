@@ -19,7 +19,10 @@ app.post('/webhook', (req, res) => {
         Time: receivedData.time || new Date(),
         ChiSquare: receivedData.chi_square || 0,
         RealImpedance: receivedData.real_impedance || [],
-        ImaginaryImpedance: receivedData.imaginary_impedance || []
+        ImaginaryImpedance: receivedData.imaginary_impedance || [],
+        Frequencies: receivedData.frequencies || [],
+        Parameters: receivedData.parameters || [],
+        ElementNames: receivedData.element_names || []
     };
     
     console.log('webhookData :=', JSON.stringify(webhookData, null, 2));

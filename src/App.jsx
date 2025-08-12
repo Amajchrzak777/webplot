@@ -11,19 +11,31 @@ function App() {
   const [showWaterfallPlot, setShowWaterfallPlot] = useState(true);
 
   // Function to parse CSV data and convert to webhook format
-  const parseCsvToWebhookFormat = (csvText) => {
+  const parseCsvToWebhookFormat = (csvText, fileName = 'unknown') => {
     const lines = csvText.trim().split('\n');
-    const headers = lines[0].split(',');
     
-    // Expected headers: Z_real,Z_imag,Spectrum_Number,Frequency_Hz
+    // Check if first line looks like headers or data
+    const firstLine = lines[0].split(',');
+    const hasHeaders = isNaN(parseFloat(firstLine[0])); // If first column isn't a number, it's probably headers
+    
+    const startIndex = hasHeaders ? 1 : 0;
+    
+    // Expected format: Frequency_Hz,Z_real,Z_imag (first column is always frequency)
     const dataBySpectrum = {};
     
-    for (let i = 1; i < lines.length; i++) {
+    for (let i = startIndex; i < lines.length; i++) {
       const values = lines[i].split(',');
-      const zReal = parseFloat(values[0]);
-      const zImag = parseFloat(values[1]);
-      const spectrumNumber = parseInt(values[2]);
-      const frequency = parseFloat(values[3]);
+      if (values.length < 3) continue; // Skip incomplete lines
+      
+      const frequency = parseFloat(values[0]);  // First column is always frequency
+      const zReal = parseFloat(values[1]);      // Second column is real impedance
+      const zImag = parseFloat(values[2]);      // Third column is imaginary impedance
+      
+      // Skip invalid data
+      if (isNaN(frequency) || isNaN(zReal) || isNaN(zImag)) continue;
+      
+      // If there's a 4th column, use it as spectrum number, otherwise treat as single spectrum
+      const spectrumNumber = values.length >= 4 ? parseInt(values[3]) : 1;
       
       if (!dataBySpectrum[spectrumNumber]) {
         dataBySpectrum[spectrumNumber] = {
@@ -41,13 +53,14 @@ function App() {
     // Convert to webhook format
     const webhookFormatData = Object.keys(dataBySpectrum).map((spectrumNum, index) => {
       const spectrum = dataBySpectrum[spectrumNum];
+      const baseFileName = fileName.replace('.csv', '').replace(/[^a-zA-Z0-9_]/g, '_');
       return {
-        ID: `csv_spectrum_${spectrumNum}`,
-        Time: new Date(Date.now() + index * 1000).toISOString(), // Simulate time progression
-        ChiSquare: Math.random() * 0.01, // Simulated chi-square
+        ID: `${baseFileName}_spectrum_${spectrumNum}`,
+        Time: new Date().toISOString(), // Current timestamp
+        ChiSquare: null, // N/A - no theoretical model data available
         RealImpedance: spectrum.realImpedance,
         ImaginaryImpedance: spectrum.imaginaryImpedance,
-        BytesLength: spectrum.realImpedance.length * 16, // Simulated
+        BytesLength: null, // Not applicable for CSV data
         Frequencies: spectrum.frequencies
       };
     });
@@ -80,9 +93,9 @@ function App() {
       const reader = new FileReader();
       reader.onload = (e) => {
         const csvText = e.target.result;
-        const parsedData = parseCsvToWebhookFormat(csvText);
+        const parsedData = parseCsvToWebhookFormat(csvText, file.name);
         setCsvData(parsedData);
-        console.log(`Loaded ${parsedData.length} spectra from CSV`);
+        console.log(`Loaded ${parsedData.length} spectra from CSV file: ${file.name}`);
       };
       reader.readAsText(file);
     }
@@ -167,7 +180,7 @@ function App() {
               style={{ marginBottom: '10px' }}
             />
             <p style={{ fontSize: '12px', color: '#666' }}>
-              Expected CSV format: Z_real,Z_imag,Spectrum_Number,Frequency_Hz
+              Expected CSV format: Frequency_Hz,Z_real,Z_imag (first column is always frequency)
             </p>
             {csvData.length > 0 && (
               <p style={{ color: '#28a745', fontWeight: 'bold' }}>
@@ -278,6 +291,55 @@ function App() {
             />
             Waterfall Plot (3D)
           </label>
+        </div>
+      </div>
+      
+      {/* Axis Legend */}
+      <div style={{ 
+        border: '2px solid #6f42c1', 
+        padding: '15px', 
+        borderRadius: '5px',
+        backgroundColor: '#faf8ff',
+        marginBottom: '20px'
+      }}>
+        <h3 style={{ color: '#6f42c1', margin: '0 0 12px 0' }}>📊 Axis Legend & Plot Types</h3>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '15px' }}>
+          {/* Nyquist Plot Axes */}
+          <div style={{ 
+            backgroundColor: '#fff', 
+            padding: '12px', 
+            borderRadius: '5px',
+            border: '1px solid #e1d5f4'
+          }}>
+            <h4 style={{ color: '#007bff', margin: '0 0 8px 0' }}>🟦 Nyquist Plot (3D EIS)</h4>
+            <div style={{ fontSize: '13px', lineHeight: '1.4' }}>
+              <div><strong>X-axis:</strong> Z' (Real Impedance) [Ω]</div>
+              <div><strong>Y-axis:</strong> Spectrum Number</div>
+              <div><strong>Z-axis:</strong> Z'' (Imaginary Impedance) [Ω]</div>
+              <div style={{ marginTop: '6px', fontStyle: 'italic', color: '#666' }}>
+                Shows impedance evolution across spectra in complex plane
+              </div>
+            </div>
+          </div>
+          
+          {/* Waterfall Plot Axes */}
+          <div style={{ 
+            backgroundColor: '#fff', 
+            padding: '12px', 
+            borderRadius: '5px',
+            border: '1px solid #e1d5f4'
+          }}>
+            <h4 style={{ color: '#28a745', margin: '0 0 8px 0' }}>🟩 Waterfall Plot (3D Frequency)</h4>
+            <div style={{ fontSize: '13px', lineHeight: '1.4' }}>
+              <div><strong>X-axis:</strong> log₁₀(Frequency) [Hz]</div>
+              <div><strong>Y-axis:</strong> Spectrum Number</div>
+              <div><strong>Z-axis:</strong> |Z| (Impedance Magnitude) [Ω]</div>
+              <div style={{ marginTop: '6px', fontStyle: 'italic', color: '#666' }}>
+                Shows frequency response evolution with magnitude coloring
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       

@@ -6,7 +6,7 @@ const WaterfallPlot3D = ({ allWebhookData }) => {
   
   // State to track which spectrum is currently selected (only one visible at a time)
   const [selectedSpectrum, setSelectedSpectrum] = useState(null);
-  const [showAllSpectrums, setShowAllSpectrums] = useState(false);
+  const [showAllSpectrums, setShowAllSpectrums] = useState(true);
   
   // Show only specific spectrum
   const showOnlySpectrum = (index) => {

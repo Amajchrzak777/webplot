@@ -7,7 +7,7 @@ const ImpedancePlot3D = ({ allWebhookData }) => {
   
   // State to track which spectrum is currently selected (only one visible at a time)
   const [selectedSpectrum, setSelectedSpectrum] = useState(null);
-  const [showAllSpectrums, setShowAllSpectrums] = useState(false);
+  const [showAllSpectrums, setShowAllSpectrums] = useState(true);
   
   // Debug logging for state changes
   useEffect(() => {
@@ -17,13 +17,13 @@ const ImpedancePlot3D = ({ allWebhookData }) => {
   // Keep track of data length to only reset when the number of spectra changes
   const [dataLength, setDataLength] = useState(0);
   
-  // Initialize with no spectrum selected (empty plot) only when number of spectra changes
+  // Initialize with all spectrums shown by default when number of spectra changes
   useEffect(() => {
     if (allWebhookData && allWebhookData.length > 0 && allWebhookData.length !== dataLength) {
-      console.log('Number of spectra changed from', dataLength, 'to', allWebhookData.length, '- resetting to empty plot');
+      console.log('Number of spectra changed from', dataLength, 'to', allWebhookData.length, '- showing all spectra by default');
       setDataLength(allWebhookData.length);
       setSelectedSpectrum(null);
-      setShowAllSpectrums(false);
+      setShowAllSpectrums(true);
     }
   }, [allWebhookData, dataLength]); // Only reset when the actual count changes
   

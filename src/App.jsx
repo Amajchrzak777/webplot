@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import ImpedancePlot3D from './ImpedancePlot3D';
 import WaterfallPlot3D from './WaterfallPlot3D';
+import ParameterEvolutionPlot2D from './ParameterEvolutionPlot2D';
 
 function App() {
   const [webhookData, setWebhookData] = useState(null);
@@ -9,6 +10,7 @@ function App() {
   const [csvData, setCsvData] = useState([]);
   const [showNyquistPlot, setShowNyquistPlot] = useState(true);
   const [showWaterfallPlot, setShowWaterfallPlot] = useState(true);
+  const [showParameterEvolutionPlot, setShowParameterEvolutionPlot] = useState(true);
 
   // Function to parse CSV data and convert to webhook format
   const parseCsvToWebhookFormat = (csvText, fileName = 'unknown') => {
@@ -272,7 +274,7 @@ function App() {
         marginBottom: '20px'
       }}>
         <h3>Plot Controls</h3>
-        <div style={{ display: 'flex', gap: '20px' }}>
+        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
           <label>
             <input
               type="checkbox"
@@ -291,8 +293,18 @@ function App() {
             />
             Waterfall Plot (3D)
           </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={showParameterEvolutionPlot}
+              onChange={(e) => setShowParameterEvolutionPlot(e.target.checked)}
+              style={{ marginRight: '5px' }}
+            />
+            Circuit Parameter Evolution (2D)
+          </label>
         </div>
       </div>
+      
       
       {/* Axis Legend */}
       <div style={{ 
@@ -340,12 +352,33 @@ function App() {
               </div>
             </div>
           </div>
+
+          {/* Parameter Evolution Plots */}
+          <div style={{ 
+            backgroundColor: '#fff', 
+            padding: '12px', 
+            borderRadius: '5px',
+            border: '1px solid #e1d5f4'
+          }}>
+            <h4 style={{ color: '#e83e8c', margin: '0 0 8px 0' }}>🔬 Circuit Parameter Evolution (2D)</h4>
+            <div style={{ fontSize: '13px', lineHeight: '1.4' }}>
+              <div><strong>X-axis:</strong> Spectrum Number</div>
+              <div><strong>Y-axis:</strong> Parameter Value [Ω], [F], or [S⋅s^n]</div>
+              <div><strong>Parameters:</strong> R₁, R₂ (resistances), C (capacitance), Q, n (CPE)</div>
+              <div style={{ marginTop: '6px', fontStyle: 'italic', color: '#666' }}>
+                Shows evolution of circuit parameters (R(CR), R(QR), etc.) from goimpcore fitting
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       
       {/* Render plots based on checkboxes */}
       {showNyquistPlot && <ImpedancePlot3D allWebhookData={plotData} />}
       {showWaterfallPlot && <WaterfallPlot3D allWebhookData={plotData} />}
+      {showParameterEvolutionPlot && plotData.length > 0 && (
+        <ParameterEvolutionPlot2D allSpectra={plotData} />
+      )}
     </div>
   );
 }

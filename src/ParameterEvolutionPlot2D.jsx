@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import Plot from 'react-plotly.js';
 
 const ParameterEvolutionPlot2D = ({ allSpectra }) => {
-  // Function to extract circuit parameters from goimpcore results
+  // Function to extract circuit parameters dynamically from goimpcore results
   const extractCircuitParameters = (parameters, elementNames) => {
     if (!parameters || !elementNames || parameters.length !== elementNames.length) {
       return null;
@@ -14,88 +14,68 @@ const ParameterEvolutionPlot2D = ({ allSpectra }) => {
       mapping: elementNames.map((name, idx) => `${name}=${parameters[idx].toExponential(2)}`)
     });
 
-    let R1 = null, R2 = null, C = null, Q = null, n = null;
-    let circuitType = 'unknown';
+    // Create dynamic parameter mapping with proper numbering
+    const parameterMap = {};
+    const circuitElements = [];
     
-    // Find parameters by element names (from goimpcore)
-    const resistances = [];
-    const capacitances = [];
+    // Count occurrences of each element type to give them unique names
+    const elementCounts = {};
     
     for (let i = 0; i < elementNames.length; i++) {
       const elementName = elementNames[i].toLowerCase();
       const value = parameters[i];
       
-      if (elementName === 'r') {
-        resistances.push(value);
-      } else if (elementName === 'c') {
-        capacitances.push(value);
-      } else if (elementName === 'qy') {
-        Q = value; // CPE Y parameter (Q)
-      } else if (elementName === 'qn') {
-        n = value; // CPE n parameter (exponent)
-      }
-    }
-
-    // Determine circuit type and assign parameters
-    if (resistances.length >= 1 && capacitances.length >= 1) {
-      // R(CR) circuit - most common
-      circuitType = 'R(CR)';
-      R1 = resistances[0]; // Series resistance
-      R2 = resistances.length > 1 ? resistances[1] : 0; // Parallel resistance
-      C = capacitances[0]; // Capacitance
+      // Create a more readable parameter name with proper numbering
+      let displayName = elementName.toUpperCase();
+      let includeInPlots = true;
       
-      // Convert R(CR) to approximate R(QR) parameters for comparison
-      if (C > 0) {
-        Q = C; // Rough approximation: Q ≈ C for comparison
-        n = 1.0; // Pure capacitor has n = 1
+      if (elementName === 'qy') {
+        // CPE Y parameter - this will be the main Q plot
+        displayName = 'Q';
+      } else if (elementName === 'qn') {
+        // CPE n parameter - store for table but don't create separate plot
+        displayName = 'n';
+        includeInPlots = false; // Don't create a separate plot for n
+      } else if (elementName === 'r') {
+        // Number resistances: R1, R2, R3, etc.
+        elementCounts['r'] = (elementCounts['r'] || 0) + 1;
+        displayName = `R${elementCounts['r']}`;
+      } else if (elementName === 'c') {
+        // Number capacitances: C1, C2, C3, etc.
+        elementCounts['c'] = (elementCounts['c'] || 0) + 1;
+        displayName = `C${elementCounts['c']}`;
+      } else if (elementName === 'l') {
+        // Number inductances: L1, L2, L3, etc.
+        elementCounts['l'] = (elementCounts['l'] || 0) + 1;
+        displayName = `L${elementCounts['l']}`;
+      } else if (elementName === 'w') {
+        // Number Warburg elements: W1, W2, W3, etc.
+        elementCounts['w'] = (elementCounts['w'] || 0) + 1;
+        displayName = `W${elementCounts['w']}`;
       }
-    } else if (resistances.length >= 2 && Q !== null && n !== null) {
-      // R(QR) circuit
-      circuitType = 'R(QR)';
-      R1 = resistances[0]; // Series resistance
-      R2 = resistances[1]; // Charge transfer resistance
-    } else {
-      // Fallback for other circuits
-      circuitType = `Custom (${elementNames.join('')})`;
-      R1 = resistances[0] || 0;
-      R2 = resistances[1] || resistances[0] || 0;
-      Q = Q || C || 1e-5;
-      n = n || (C ? 1.0 : 0.8);
+      
+      // Always store in parameter map for table display
+      parameterMap[displayName] = value;
+      
+      // Only add to circuitElements if it should have its own plot
+      if (includeInPlots) {
+        circuitElements.push({
+          name: displayName,
+          originalName: elementName,
+          value: value,
+          index: i
+        });
+      }
     }
 
     const result = {
-      R1: R1 || 0,
-      R2: R2 || 0,
-      C: C || 0,
-      Q: Q || 1e-5,
-      n: n || 0.8,
-      circuitType,
+      parameters: parameterMap,
+      circuitElements: circuitElements,
       originalElementNames: elementNames,
       originalParameters: parameters
     };
 
     console.log('✅ Extracted circuit parameters:', result);
-    
-    // Detailed analysis for DEIS validation
-    console.table({
-      'Parameter': ['R1 (Series)', 'R2 (Charge Transfer)', 'C (Capacitance)', 'Q (CPE)', 'n (CPE Exp)', 'Circuit Type'],
-      'Value': [
-        `${result.R1.toExponential(3)} Ω`,
-        `${result.R2.toExponential(3)} Ω`, 
-        result.C > 0 ? `${result.C.toExponential(3)} F` : 'N/A',
-        `${result.Q.toExponential(3)} S⋅s^n`,
-        result.n.toFixed(3),
-        result.circuitType
-      ],
-      'DEIS Assessment': [
-        result.R1 < 0.1 || result.R1 > 1000 ? '⚠️ SUSPICIOUS' : '✅ OK',
-        result.R2 < 0.01 || result.R2 > 1e7 ? '⚠️ SUSPICIOUS' : '✅ OK',
-        result.C > 0 && (result.C < 1e-9 || result.C > 0.1) ? '⚠️ SUSPICIOUS' : result.C > 0 ? '✅ OK' : 'N/A',
-        result.Q < 1e-9 || result.Q > 0.1 ? '⚠️ SUSPICIOUS' : '✅ OK',
-        result.n < 0.5 || result.n > 1.0 ? '⚠️ SUSPICIOUS' : '✅ OK',
-        result.circuitType.includes('Custom') ? '⚠️ NON-STANDARD' : '✅ OK'
-      ]
-    });
     
     return result;
   };
@@ -110,21 +90,8 @@ const ParameterEvolutionPlot2D = ({ allSpectra }) => {
     console.log('🔍 DEBUG: Analyzing webhook data from goimpcore:');
     console.log('Total spectra:', allSpectra.length);
     
-    // Summary for DEIS analysis
-    const summary = {
-      totalSpectra: allSpectra.length,
-      spectraWithParameters: 0,
-      circuitTypes: new Set(),
-      parameterRanges: {
-        R1: { min: Infinity, max: -Infinity },
-        R2: { min: Infinity, max: -Infinity },
-        C: { min: Infinity, max: -Infinity },
-        Q: { min: Infinity, max: -Infinity },
-        n: { min: Infinity, max: -Infinity }
-      }
-    };
-    
     const results = [];
+    const allParameterNames = new Set();
     
     for (let i = 0; i < allSpectra.length; i++) {
       const spectrum = allSpectra[i];
@@ -134,78 +101,55 @@ const ParameterEvolutionPlot2D = ({ allSpectra }) => {
         Parameters: spectrum.Parameters,
         ElementNames: spectrum.ElementNames,
         ChiSquare: spectrum.ChiSquare,
-        HasFrequencies: !!spectrum.Frequencies,
-        HasRealImpedance: !!spectrum.RealImpedance,
-        HasElementImpedances: !!spectrum.ElementImpedances,
-        ParameterMapping: spectrum.Parameters && spectrum.ElementNames ? 
-          spectrum.ElementNames.map((name, idx) => `${name}=${spectrum.Parameters[idx]}`) : []
+        CircuitType: spectrum.CircuitType
       });
       
       // Use real parameters calculated by goimpcore
       if (spectrum.Parameters && spectrum.ElementNames) {
         const params = extractCircuitParameters(spectrum.Parameters, spectrum.ElementNames);
         if (params) {
+          // Use circuit type from webhook
+          const circuitType = spectrum.CircuitType || 'Unknown';
+          
           results.push({
             spectrumNumber: i + 1,
             spectrumID: spectrum.ID,
-            ...params,
-            chiSquare: spectrum.ChiSquare
+            circuitType: circuitType,
+            parameters: params.parameters,
+            circuitElements: params.circuitElements,
+            chiSquare: spectrum.ChiSquare,
+            originalElementNames: params.originalElementNames,
+            originalParameters: params.originalParameters
           });
           
-          // Update summary statistics
-          summary.spectraWithParameters++;
-          summary.circuitTypes.add(params.circuitType);
-          
-          // Track parameter ranges for DEIS analysis
-          const ranges = summary.parameterRanges;
-          ranges.R1.min = Math.min(ranges.R1.min, params.R1);
-          ranges.R1.max = Math.max(ranges.R1.max, params.R1);
-          ranges.R2.min = Math.min(ranges.R2.min, params.R2);
-          ranges.R2.max = Math.max(ranges.R2.max, params.R2);
-          if (params.C > 0) {
-            ranges.C.min = Math.min(ranges.C.min, params.C);
-            ranges.C.max = Math.max(ranges.C.max, params.C);
-          }
-          ranges.Q.min = Math.min(ranges.Q.min, params.Q);
-          ranges.Q.max = Math.max(ranges.Q.max, params.Q);
-          ranges.n.min = Math.min(ranges.n.min, params.n);
-          ranges.n.max = Math.max(ranges.n.max, params.n);
+          // Collect parameter names that should have plots (excludes 'n')
+          params.circuitElements.forEach(element => {
+            allParameterNames.add(element.name);
+          });
         }
       }
     }
 
-    // Print comprehensive DEIS analysis summary
-    if (results.length > 0) {
-      console.log('\n📊 DEIS PARAMETER ANALYSIS SUMMARY:');
-      console.table({
-        'Metric': ['Total Spectra', 'With Parameters', 'Circuit Types', 'R1 Range (Ω)', 'R2 Range (Ω)', 'C Range (F)', 'Q Range (S⋅s^n)', 'n Range'],
-        'Value': [
-          summary.totalSpectra,
-          summary.spectraWithParameters,
-          Array.from(summary.circuitTypes).join(', '),
-          `${summary.parameterRanges.R1.min.toExponential(2)} - ${summary.parameterRanges.R1.max.toExponential(2)}`,
-          `${summary.parameterRanges.R2.min.toExponential(2)} - ${summary.parameterRanges.R2.max.toExponential(2)}`,
-          summary.parameterRanges.C.min < Infinity ? `${summary.parameterRanges.C.min.toExponential(2)} - ${summary.parameterRanges.C.max.toExponential(2)}` : 'N/A',
-          `${summary.parameterRanges.Q.min.toExponential(2)} - ${summary.parameterRanges.Q.max.toExponential(2)}`,
-          `${summary.parameterRanges.n.min.toFixed(3)} - ${summary.parameterRanges.n.max.toFixed(3)}`
-        ],
-        'DEIS Assessment': [
-          '✅ INFO',
-          summary.spectraWithParameters === summary.totalSpectra ? '✅ ALL GOOD' : '⚠️ MISSING DATA',
-          Array.from(summary.circuitTypes).every(type => ['R(CR)', 'R(QR)'].includes(type)) ? '✅ STANDARD' : '⚠️ NON-STANDARD',
-          summary.parameterRanges.R1.max/summary.parameterRanges.R1.min > 100 ? '⚠️ HIGH VARIATION' : '✅ STABLE',
-          summary.parameterRanges.R2.max/summary.parameterRanges.R2.min > 1000 ? '✅ EXPECTED VARIATION' : '⚠️ LOW VARIATION',
-          'ℹ️ CHECK INDIVIDUAL',
-          summary.parameterRanges.Q.max/summary.parameterRanges.Q.min > 100 ? '⚠️ HIGH VARIATION' : '✅ STABLE',
-          summary.parameterRanges.n.max - summary.parameterRanges.n.min > 0.2 ? '⚠️ HIGH VARIATION' : '✅ STABLE'
-        ]
+    // Collect ALL parameter names for table (including 'n')
+    const allTableParameters = new Set();
+    results.forEach(spectrum => {
+      Object.keys(spectrum.parameters).forEach(paramName => {
+        allTableParameters.add(paramName);
       });
-    }
+    });
 
-    return results;
+    console.log('✅ Plot parameters found:', Array.from(allParameterNames));
+    console.log('✅ All table parameters found:', Array.from(allTableParameters));
+    console.log(`✅ Processed ${results.length} spectra with parameters`);
+
+    return {
+      spectraData: results,
+      uniqueParameters: Array.from(allParameterNames), // For plots
+      allTableParameters: Array.from(allTableParameters) // For table
+    };
   }, [allSpectra]);
 
-  if (!parameterEvolution || parameterEvolution.length === 0) {
+  if (!parameterEvolution || !parameterEvolution.spectraData || parameterEvolution.spectraData.length === 0) {
     return (
       <div style={{ 
         padding: '20px', 
@@ -214,7 +158,7 @@ const ParameterEvolutionPlot2D = ({ allSpectra }) => {
         borderRadius: '5px',
         marginTop: '20px'
       }}>
-        <h4 style={{ color: '#6c757d' }}>📈 R(QR) Parameter Evolution</h4>
+        <h4 style={{ color: '#6c757d' }}>📈 Circuit Parameter Evolution</h4>
         <p style={{ color: '#6c757d', fontStyle: 'italic' }}>
           No impedance data available for parameter fitting
         </p>
@@ -222,11 +166,45 @@ const ParameterEvolutionPlot2D = ({ allSpectra }) => {
     );
   }
 
-  const spectrumNumbers = parameterEvolution.map(p => p.spectrumNumber);
-  const R1_values = parameterEvolution.map(p => p.R1);
-  const R2_values = parameterEvolution.map(p => p.R2);
-  const Q_values = parameterEvolution.map(p => p.Q);
-  const n_values = parameterEvolution.map(p => p.n);
+  const { spectraData, uniqueParameters, allTableParameters } = parameterEvolution;
+  const spectrumNumbers = spectraData.map(p => p.spectrumNumber);
+  
+  // Get circuit type from first spectrum
+  const circuitType = spectraData.length > 0 ? spectraData[0].circuitType : 'Unknown';
+
+  // Function to get parameter values for a specific parameter across all spectra
+  const getParameterValues = (paramName) => {
+    return spectraData.map(spectrum => {
+      return spectrum.parameters[paramName] || 0;
+    });
+  };
+
+  // Function to get parameter unit and color
+  const getParameterInfo = (paramName) => {
+    const colors = ['#dc3545', '#fd7e14', '#6f42c1', '#28a745', '#17a2b8', '#ffc107', '#e83e8c'];
+    const colorIndex = uniqueParameters.indexOf(paramName) % colors.length;
+    
+    let unit = '';
+    let useLogScale = false;
+    
+    if (paramName.toUpperCase() === 'R' || paramName.includes('R')) {
+      unit = '[Ω]';
+    } else if (paramName.toUpperCase() === 'C') {
+      unit = '[F]';
+      useLogScale = true;
+    } else if (paramName.toUpperCase() === 'Q') {
+      unit = '[S⋅s^n]';
+      useLogScale = true;
+    } else if (paramName.toLowerCase() === 'n') {
+      unit = '';
+    }
+    
+    return {
+      color: colors[colorIndex],
+      unit: unit,
+      useLogScale: useLogScale
+    };
+  };
 
   return (
     <div style={{ marginTop: '20px' }}>
@@ -236,7 +214,7 @@ const ParameterEvolutionPlot2D = ({ allSpectra }) => {
         borderBottom: '2px solid #dee2e6',
         paddingBottom: '8px'
       }}>
-        📈 R(QR) Circuit Parameter Evolution
+        📈 Circuit Parameters: {circuitType}
       </h4>
       
       <div style={{
@@ -247,233 +225,96 @@ const ParameterEvolutionPlot2D = ({ allSpectra }) => {
         fontSize: '12px',
         color: '#6c757d'
       }}>
-        <strong>Dane źródłowe:</strong> Parametry obliczone przez goimpcore (nie symulowane)<br/>
-        <strong>Model:</strong> Automatyczna detekcja układu (R(CR), R(QR), lub inny) i mapowanie parametrów
+        <strong>Dane źródłowe:</strong> Parametry obliczone przez goimpcore<br/>
+        <strong>Typ układu:</strong> {circuitType} | <strong>Wykresy:</strong> {uniqueParameters.join(', ')} | <strong>Tabela:</strong> {allTableParameters.join(', ')}
       </div>
 
-      {/* Parameter evolution plots */}
+      {/* Dynamic Parameter evolution plots */}
       <div style={{ 
         display: 'grid', 
         gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', 
         gap: '20px' 
       }}>
         
-        {/* R1 Evolution */}
-        <div style={{
-          backgroundColor: '#ffffff',
-          border: '1px solid #dee2e6',
-          borderRadius: '8px',
-          overflow: 'hidden'
-        }}>
-          <div style={{
-            backgroundColor: '#f8f9fa',
-            padding: '12px 15px',
-            borderBottom: '1px solid #dee2e6',
-            fontWeight: 'bold',
-            color: '#dc3545'
-          }}>
-            R1
-          </div>
+        {/* Individual parameter plots */}
+        {uniqueParameters.map((paramName) => {
+          const paramInfo = getParameterInfo(paramName);
+          const paramValues = getParameterValues(paramName);
           
-          <div style={{ padding: '15px' }}>
-            <Plot
-              data={[{
-                x: spectrumNumbers,
-                y: R1_values,
-                type: 'scatter',
-                mode: 'lines+markers',
-                marker: {
-                  size: 6,
-                  color: '#dc3545',
-                  line: { width: 1, color: '#ffffff' }
-                },
-                line: {
-                  color: '#dc3545',
-                  width: 3
-                },
-                name: 'R₁'
-              }]}
-              layout={{
-                title: {
-                  text: 'Ewolucja Oporu R1',
-                  font: { size: 14, color: '#495057' }
-                },
-                xaxis: {
-                  title: {
-                    text: 'Numer Widma / Spectrum Number',
-                    font: { size: 12, color: '#495057' }
-                  },
-                  showgrid: true,
-                  gridcolor: '#f0f0f0',
-                  tickfont: { size: 11 }
-                },
-                yaxis: {
-                  title: {
-                    text: 'Opór R₁ [Ω] / Series Resistance',
-                    font: { size: 12, color: '#495057' }
-                  },
-                  showgrid: true,
-                  gridcolor: '#f0f0f0',
-                  tickfont: { size: 11 }
-                },
-                margin: { l: 70, r: 30, t: 50, b: 60 },
-                height: 300,
-                showlegend: false,
-                plot_bgcolor: '#fafafa',
-                paper_bgcolor: '#ffffff'
-              }}
-              config={{
-                displayModeBar: false
-              }}
-              style={{ width: '100%' }}
-            />
-          </div>
-        </div>
-
-        {/* R2 Evolution */}
-        <div style={{
-          backgroundColor: '#ffffff',
-          border: '1px solid #dee2e6',
-          borderRadius: '8px',
-          overflow: 'hidden'
-        }}>
-          <div style={{
-            backgroundColor: '#f8f9fa',
-            padding: '12px 15px',
-            borderBottom: '1px solid #dee2e6',
-            fontWeight: 'bold',
-            color: '#fd7e14'
-          }}>
-            R2
-          </div>
-          
-          <div style={{ padding: '15px' }}>
-            <Plot
-              data={[{
-                x: spectrumNumbers,
-                y: R2_values,
-                type: 'scatter',
-                mode: 'lines+markers',
-                marker: {
-                  size: 6,
-                  color: '#fd7e14',
-                  line: { width: 1, color: '#ffffff' }
-                },
-                line: {
-                  color: '#fd7e14',
-                  width: 3
-                },
-                name: 'R₂'
-              }]}
-              layout={{
-                title: {
-                  text: 'Ewolucja Oporu R2',
-                  font: { size: 14, color: '#495057' }
-                },
-                xaxis: {
-                  title: {
-                    text: 'Numer Widma / Spectrum Number',
-                    font: { size: 12, color: '#495057' }
-                  },
-                  showgrid: true,
-                  gridcolor: '#f0f0f0',
-                  tickfont: { size: 11 }
-                },
-                yaxis: {
-                  title: {
-                    text: 'Opór R₂ [Ω] / Charge Transfer Resistance',
-                    font: { size: 12, color: '#495057' }
-                  },
-                  showgrid: true,
-                  gridcolor: '#f0f0f0',
-                  tickfont: { size: 11 }
-                },
-                margin: { l: 70, r: 30, t: 50, b: 60 },
-                height: 300,
-                showlegend: false,
-                plot_bgcolor: '#fafafa',
-                paper_bgcolor: '#ffffff'
-              }}
-              config={{
-                displayModeBar: false
-              }}
-              style={{ width: '100%' }}
-            />
-          </div>
-        </div>
-
-        {/* Q Parameter Evolution */}
-        <div style={{
-          backgroundColor: '#ffffff',
-          border: '1px solid #dee2e6',
-          borderRadius: '8px',
-          overflow: 'hidden'
-        }}>
-          <div style={{
-            backgroundColor: '#f8f9fa',
-            padding: '12px 15px',
-            borderBottom: '1px solid #dee2e6',
-            fontWeight: 'bold',
-            color: '#6f42c1'
-          }}>
-            CPE (Q)
-          </div>
-          
-          <div style={{ padding: '15px' }}>
-            <Plot
-              data={[{
-                x: spectrumNumbers,
-                y: Q_values,
-                type: 'scatter',
-                mode: 'lines+markers',
-                marker: {
-                  size: 6,
-                  color: '#6f42c1',
-                  line: { width: 1, color: '#ffffff' }
-                },
-                line: {
-                  color: '#6f42c1',
-                  width: 3
-                },
-                name: 'Q'
-              }]}
-              layout={{
-                title: {
-                  text: 'Ewolucja Parametru CPE (Q)',
-                  font: { size: 14, color: '#495057' }
-                },
-                xaxis: {
-                  title: {
-                    text: 'Numer Widma / Spectrum Number',
-                    font: { size: 12, color: '#495057' }
-                  },
-                  showgrid: true,
-                  gridcolor: '#f0f0f0',
-                  tickfont: { size: 11 }
-                },
-                yaxis: {
-                  title: {
-                    text: 'Parametr CPE Q [S⋅s^n]',
-                    font: { size: 12, color: '#495057' }
-                  },
-                  type: 'log',
-                  showgrid: true,
-                  gridcolor: '#f0f0f0',
-                  tickfont: { size: 11 }
-                },
-                margin: { l: 70, r: 30, t: 50, b: 60 },
-                height: 300,
-                showlegend: false,
-                plot_bgcolor: '#fafafa',
-                paper_bgcolor: '#ffffff'
-              }}
-              config={{
-                displayModeBar: false
-              }}
-              style={{ width: '100%' }}
-            />
-          </div>
-        </div>
+          return (
+            <div key={paramName} style={{
+              backgroundColor: '#ffffff',
+              border: '1px solid #dee2e6',
+              borderRadius: '8px',
+              overflow: 'hidden'
+            }}>
+              <div style={{
+                backgroundColor: '#f8f9fa',
+                padding: '12px 15px',
+                borderBottom: '1px solid #dee2e6',
+                fontWeight: 'bold',
+                color: paramInfo.color
+              }}>
+                {paramName}
+              </div>
+              
+              <div style={{ padding: '15px' }}>
+                <Plot
+                  data={[{
+                    x: spectrumNumbers,
+                    y: paramValues,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    marker: {
+                      size: 6,
+                      color: paramInfo.color,
+                      line: { width: 1, color: '#ffffff' }
+                    },
+                    line: {
+                      color: paramInfo.color,
+                      width: 3
+                    },
+                    name: paramName
+                  }]}
+                  layout={{
+                    title: {
+                      text: `Ewolucja parametru ${paramName}`,
+                      font: { size: 14, color: '#495057' }
+                    },
+                    xaxis: {
+                      title: {
+                        text: 'Numer Widma',
+                        font: { size: 12, color: '#495057' }
+                      },
+                      showgrid: true,
+                      gridcolor: '#f0f0f0',
+                      tickfont: { size: 11 }
+                    },
+                    yaxis: {
+                      title: {
+                        text: `${paramName} ${paramInfo.unit}`,
+                        font: { size: 12, color: '#495057' }
+                      },
+                      type: paramInfo.useLogScale ? 'log' : 'linear',
+                      showgrid: true,
+                      gridcolor: '#f0f0f0',
+                      tickfont: { size: 11 }
+                    },
+                    margin: { l: 70, r: 30, t: 50, b: 60 },
+                    height: 300,
+                    showlegend: false,
+                    plot_bgcolor: '#fafafa',
+                    paper_bgcolor: '#ffffff'
+                  }}
+                  config={{
+                    displayModeBar: false
+                  }}
+                  style={{ width: '100%' }}
+                />
+              </div>
+            </div>
+          );
+        })}
 
         {/* Combined Parameters Plot */}
         <div style={{
@@ -494,35 +335,21 @@ const ParameterEvolutionPlot2D = ({ allSpectra }) => {
           
           <div style={{ padding: '15px' }}>
             <Plot
-              data={[
-                {
+              data={uniqueParameters.map((paramName) => {
+                const paramInfo = getParameterInfo(paramName);
+                const paramValues = getParameterValues(paramName);
+                const maxValue = Math.max(...paramValues);
+                
+                return {
                   x: spectrumNumbers,
-                  y: R1_values.map(v => v / Math.max(...R1_values)),
+                  y: paramValues.map(v => v / maxValue),
                   type: 'scatter',
                   mode: 'lines+markers',
-                  marker: { size: 4, color: '#dc3545' },
-                  line: { color: '#dc3545', width: 2 },
-                  name: 'R₁ (norm)'
-                },
-                {
-                  x: spectrumNumbers,
-                  y: R2_values.map(v => v / Math.max(...R2_values)),
-                  type: 'scatter',
-                  mode: 'lines+markers',
-                  marker: { size: 4, color: '#fd7e14' },
-                  line: { color: '#fd7e14', width: 2 },
-                  name: 'R₂ (norm)'
-                },
-                {
-                  x: spectrumNumbers,
-                  y: Q_values.map(v => v / Math.max(...Q_values)),
-                  type: 'scatter',
-                  mode: 'lines+markers',
-                  marker: { size: 4, color: '#6f42c1' },
-                  line: { color: '#6f42c1', width: 2 },
-                  name: 'Q (norm)'
-                }
-              ]}
+                  marker: { size: 4, color: paramInfo.color },
+                  line: { color: paramInfo.color, width: 2 },
+                  name: `${paramName} (norm)`
+                };
+              })}
               layout={{
                 title: {
                   text: 'Znormalizowana Ewolucja Wszystkich Parametrów',
@@ -530,7 +357,7 @@ const ParameterEvolutionPlot2D = ({ allSpectra }) => {
                 },
                 xaxis: {
                   title: {
-                    text: 'Numer Widma / Spectrum Number',
+                    text: 'Numer Widma',
                     font: { size: 12, color: '#495057' }
                   },
                   showgrid: true,
@@ -539,7 +366,7 @@ const ParameterEvolutionPlot2D = ({ allSpectra }) => {
                 },
                 yaxis: {
                   title: {
-                    text: 'Wartość Znormalizowana / Normalized Value',
+                    text: 'Wartość Znormalizowana',
                     font: { size: 12, color: '#495057' }
                   },
                   showgrid: true,
@@ -562,7 +389,7 @@ const ParameterEvolutionPlot2D = ({ allSpectra }) => {
         </div>
       </div>
 
-      {/* Parameter Summary Table */}
+      {/* Dynamic Parameter Summary Table */}
       <div style={{
         marginTop: '20px',
         backgroundColor: '#f8f9fa',
@@ -576,7 +403,7 @@ const ParameterEvolutionPlot2D = ({ allSpectra }) => {
           fontWeight: 'bold',
           color: '#495057'
         }}>
-          Parametry z goimpcore (Rzeczywiste Wyniki Dopasowania)
+          Parametry z goimpcore - {circuitType}
         </div>
         <div style={{ padding: '15px', maxHeight: '300px', overflowY: 'auto' }}>
           <table style={{ width: '100%', fontSize: '12px' }}>
@@ -584,42 +411,36 @@ const ParameterEvolutionPlot2D = ({ allSpectra }) => {
               <tr style={{ backgroundColor: '#f8f9fa' }}>
                 <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #dee2e6' }}>Widmo</th>
                 <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #dee2e6' }}>Układ</th>
-                <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #dee2e6' }}>R₁ [Ω]</th>
-                <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #dee2e6' }}>R₂ [Ω]</th>
-                <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #dee2e6' }}>C [F]</th>
-                <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #dee2e6' }}>Q [S⋅s^n]</th>
-                <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #dee2e6' }}>n</th>
+                {allTableParameters.map(paramName => (
+                  <th key={paramName} style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #dee2e6' }}>
+                    {paramName} {getParameterInfo(paramName).unit}
+                  </th>
+                ))}
                 <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #dee2e6' }}>χ²</th>
                 <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #dee2e6' }}>Elementy</th>
               </tr>
             </thead>
             <tbody>
-              {parameterEvolution.map((params, index) => (
+              {spectraData.map((spectrum, index) => (
                 <tr key={index} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                  <td style={{ padding: '6px 8px' }}>{params.spectrumNumber}</td>
-                  <td style={{ padding: '6px 8px', fontWeight: 'bold', color: params.circuitType === 'R(QR)' ? '#28a745' : '#dc3545' }}>
-                    {params.circuitType}
+                  <td style={{ padding: '6px 8px' }}>{spectrum.spectrumNumber}</td>
+                  <td style={{ padding: '6px 8px', fontWeight: 'bold', color: '#28a745' }}>
+                    {spectrum.circuitType}
                   </td>
+                  {allTableParameters.map(paramName => (
+                    <td key={paramName} style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace' }}>
+                      {spectrum.parameters[paramName] ? 
+                        (spectrum.parameters[paramName] > 1e-3 && spectrum.parameters[paramName] < 1e3 ? 
+                          spectrum.parameters[paramName].toFixed(4) : 
+                          spectrum.parameters[paramName].toExponential(3)
+                        ) : '-'}
+                    </td>
+                  ))}
                   <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace' }}>
-                    {params.R1.toExponential(3)}
-                  </td>
-                  <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace' }}>
-                    {params.R2.toExponential(3)}
-                  </td>
-                  <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace' }}>
-                    {params.C > 0 ? params.C.toExponential(3) : '-'}
-                  </td>
-                  <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace' }}>
-                    {params.Q.toExponential(3)}
-                  </td>
-                  <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace' }}>
-                    {params.n.toFixed(3)}
-                  </td>
-                  <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace' }}>
-                    {params.chiSquare ? params.chiSquare.toExponential(3) : 'N/A'}
+                    {spectrum.chiSquare ? spectrum.chiSquare.toExponential(3) : 'N/A'}
                   </td>
                   <td style={{ padding: '6px 8px', fontSize: '10px', fontFamily: 'monospace' }}>
-                    {params.originalElementNames ? params.originalElementNames.join(', ') : 'N/A'}
+                    {spectrum.originalElementNames ? spectrum.originalElementNames.join(', ') : 'N/A'}
                   </td>
                 </tr>
               ))}

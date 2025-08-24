@@ -23,7 +23,8 @@ app.post('/webhook', (req, res) => {
         Frequencies: receivedData.frequencies || [],
         Parameters: receivedData.parameters || [],
         ElementNames: receivedData.element_names || [],
-        ElementImpedances: receivedData.element_impedances || []
+        ElementImpedances: receivedData.element_impedances || [],
+        CircuitType: receivedData.circuit_type || 'Unknown'
     };
     
     console.log('webhookData :=', JSON.stringify(webhookData, null, 2));

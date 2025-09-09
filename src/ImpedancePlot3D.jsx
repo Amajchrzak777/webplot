@@ -210,7 +210,7 @@ const ImpedancePlot3D = ({ allWebhookData }) => {
         autorange: false
       },
       camera: {
-        eye: { x: 1.5, y: 1.5, z: 1.5 }
+        eye: { x: 0.3, y: 1.5, z: 1.2 }  // Changed angle for better Nyquist plot viewing
       },
       aspectmode: 'manual',
       aspectratio: { x: 1, y: 1, z: 0.5 }
